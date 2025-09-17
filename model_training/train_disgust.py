@@ -9,6 +9,12 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint,ReduceLROn
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import (
+    classification_report, confusion_matrix,
+    precision_recall_curve, roc_curve, roc_auc_score
+)
+import seaborn as sns
+import pandas as pd 
 # Load data
 loader = Common_Data_Loading()
 loader.load_and_transform()
@@ -53,40 +59,102 @@ def create_strong_gru_model(input_shape=(5, 17)):
     return model
 
 # Example usage
+# ----------------------------
+# Model Training
+# ----------------------------
 model = create_strong_gru_model()
 
-# Callbacks for better performance
 early_stop = EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True)
 rlr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4)
 checkpoint = ModelCheckpoint("best_model.keras", monitor="val_loss", save_best_only=True)
 
+history = model.fit(
+    loader.X_train, y_train_bin,
+    validation_data=(loader.X_test, y_test_bin),
+    epochs=60, batch_size=64,
+    callbacks=[early_stop, rlr, checkpoint]
+)
 
-# Training example
-history = model.fit(loader.X_train, y_train_bin, validation_data=(loader.X_test, y_test_bin),
-                    epochs=50, batch_size=64, callbacks=[early_stop, checkpoint])
+print("Training complete!")
 
-print(history)
+# ----------------------------
+# Predictions
+# ----------------------------
+y_prob = model.predict(loader.X_test).ravel()       # predicted probabilities
+y_pred = (y_prob >= 0.5).astype(int)               # default threshold
 
-# Confusion matrix & classification report
-y_prob = model.predict(loader.X_test).ravel()       # probabilities
-y_pred = (y_prob >= 0.5).astype(int)         # default threshold
+# ----------------------------
+# Classification Report
+# ----------------------------
+print("Classification Report:\n", classification_report(y_test_bin, y_pred))
 
-print(classification_report(y_test_bin, y_pred))
-print(confusion_matrix(y_test_bin, y_pred))
+# Convert classification report into DataFrame for LaTeX/table export
+report_dict = classification_report(y_test_bin, y_pred, output_dict=True)
+report_df = pd.DataFrame(report_dict).transpose()
+report_df.to_csv("classification_report.csv", index=True)
 
+# ----------------------------
+# Confusion Matrix (Heatmap)
+# ----------------------------
+cm = confusion_matrix(y_test_bin, y_pred)
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negative", "Positive"], yticklabels=["Negative", "Positive"])
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.title("Confusion Matrix")
+plt.show()
 
-# Find best F1 threshold from precision–recall curve
+# ----------------------------
+# Training Curves
+# ----------------------------
+plt.figure(figsize=(8, 4))
+plt.plot(history.history["accuracy"], label="Train Accuracy")
+plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+plt.xlabel("Epochs"); plt.ylabel("Accuracy")
+plt.title("Training vs Validation Accuracy")
+plt.legend(); plt.show()
+
+plt.figure(figsize=(8, 4))
+plt.plot(history.history["loss"], label="Train Loss")
+plt.plot(history.history["val_loss"], label="Validation Loss")
+plt.xlabel("Epochs"); plt.ylabel("Loss")
+plt.title("Training vs Validation Loss")
+plt.legend(); plt.show()
+
+# ----------------------------
+# Precision-Recall Curve + Best Threshold
+# ----------------------------
 prec, rec, thresholds = precision_recall_curve(y_test_bin, y_prob)
 f1_scores = 2 * (prec * rec) / (prec + rec + 1e-12)
 best_idx = f1_scores.argmax()
 best_threshold = thresholds[best_idx]
-print("best threshold", best_threshold, "best F1", f1_scores[best_idx])
 
-# Plot PR curve
-plt.plot(rec, prec)
-plt.xlabel("Recall"); plt.ylabel("Precision"); plt.title("PR curve")
-plt.show()
+plt.plot(rec, prec, label="PR Curve")
+plt.scatter(rec[best_idx], prec[best_idx], marker="o", color="red",
+            label=f"Best F1={f1_scores[best_idx]:.3f} at Th={best_threshold:.2f}")
+plt.xlabel("Recall"); plt.ylabel("Precision")
+plt.title("Precision-Recall Curve")
+plt.legend(); plt.show()
 
-# Saving File
+print(f"Best threshold = {best_threshold:.2f}, Best F1 = {f1_scores[best_idx]:.3f}")
+
+# ----------------------------
+# ROC Curve + AUC
+# ----------------------------
+fpr, tpr, _ = roc_curve(y_test_bin, y_prob)
+auc_score = roc_auc_score(y_test_bin, y_prob)
+
+plt.plot(fpr, tpr, label=f"AUC = {auc_score:.3f}")
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
+plt.xlabel("False Positive Rate"); plt.ylabel("True Positive Rate")
+plt.title("ROC Curve")
+plt.legend(); plt.show()
+
+print(f"ROC AUC Score = {auc_score:.3f}")
+
+# ----------------------------
+# Save Model
+# ----------------------------
 model.save(r"D:\Projects\MoodMate\paper_code\models\disgust_model.h5")
 print("Saved Model successfully")
+
