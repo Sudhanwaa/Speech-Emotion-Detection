@@ -53,7 +53,7 @@ def create_strong_gru_model(input_shape=(5, 17)):
     model.add(Dense(1, activation="sigmoid"))
 
     # Compile with a tuned learning rate
-    optimizer = Adam(learning_rate=0.0005)
+    optimizer = Adam(learning_rate=0.001)
     model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy", "Precision", "Recall"])
 
     return model
@@ -101,14 +101,14 @@ def create_strong_gru_model(input_shape=(5, 17)):
 # ----------------------------
 model = create_strong_gru_model()
 
-early_stop = EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True)
-rlr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=4)
-checkpoint = ModelCheckpoint("best_model.keras", monitor="val_loss", save_best_only=True)
+early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+rlr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6)
+checkpoint = ModelCheckpoint("best_model.h5", monitor="val_loss", save_best_only=True)
 
 history = model.fit(
     loader.X_train, y_train_bin,
     validation_data=(loader.X_test, y_test_bin),
-    epochs=60, batch_size=64,
+    epochs=100, batch_size=32,
     callbacks=[early_stop, rlr, checkpoint]
 )
 
@@ -126,9 +126,10 @@ y_pred = (y_prob >= 0.5).astype(int)               # default threshold
 print("Classification Report:\n", classification_report(y_test_bin, y_pred))
 
 # Convert classification report into DataFrame for LaTeX/table export
-report_dict = classification_report(y_test_bin, y_pred, output_dict=True)
-report_df = pd.DataFrame(report_dict).transpose()
-report_df.to_csv("classification_report.csv", index=True)
+report_dict = classification_report(y_test_bin, y_pred)
+with open(r"D:\Projects\MoodMate\paper_code\Plots\angry\classification_report.txt", "w") as f:
+    f.write("Classification Report\n")
+    f.write(report_dict)
 
 # ----------------------------
 # Confusion Matrix (Heatmap)
@@ -139,7 +140,8 @@ sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Negative", "Pos
 plt.xlabel("Predicted Label")
 plt.ylabel("True Label")
 plt.title("Confusion Matrix")
-plt.show()
+plt.savefig(r"D:\Projects\MoodMate\paper_code\Plots\angry\confusion_matrix.pdf")
+plt.close()
 
 # ----------------------------
 # Training Curves
@@ -149,14 +151,16 @@ plt.plot(history.history["accuracy"], label="Train Accuracy")
 plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
 plt.xlabel("Epochs"); plt.ylabel("Accuracy")
 plt.title("Training vs Validation Accuracy")
-plt.legend(); plt.show()
+plt.legend()
+plt.savefig(r"D:\Projects\MoodMate\paper_code\Plots\angry\training_vs_validation_accuracy_curve.pdf")
 
 plt.figure(figsize=(8, 4))
 plt.plot(history.history["loss"], label="Train Loss")
 plt.plot(history.history["val_loss"], label="Validation Loss")
 plt.xlabel("Epochs"); plt.ylabel("Loss")
 plt.title("Training vs Validation Loss")
-plt.legend(); plt.show()
+plt.legend()
+plt.savefig(r"D:\Projects\MoodMate\paper_code\Plots\angry\training_vs_validation_loss_curve.pdf")
 
 # ----------------------------
 # Precision-Recall Curve + Best Threshold
@@ -166,26 +170,41 @@ f1_scores = 2 * (prec * rec) / (prec + rec + 1e-12)
 best_idx = f1_scores.argmax()
 best_threshold = thresholds[best_idx]
 
+plt.figure(figsize=(6,5))
 plt.plot(rec, prec, label="PR Curve")
 plt.scatter(rec[best_idx], prec[best_idx], marker="o", color="red",
             label=f"Best F1={f1_scores[best_idx]:.3f} at Th={best_threshold:.2f}")
-plt.xlabel("Recall"); plt.ylabel("Precision")
-plt.title("Precision-Recall Curve")
-plt.legend(); plt.show()
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.title("Precision–Recall Curve")
+plt.xlim([0,1])
+plt.ylim([0,1])
+plt.legend()
+plt.tight_layout()
+plt.savefig(r"D:\Projects\MoodMate\paper_code\Plots\angry\precision_recall_curve.pdf")
+plt.close()
 
 print(f"Best threshold = {best_threshold:.2f}, Best F1 = {f1_scores[best_idx]:.3f}")
 
+
 # ----------------------------
-# ROC Curve + AUC
+# ROC Curve
 # ----------------------------
 fpr, tpr, _ = roc_curve(y_test_bin, y_prob)
 auc_score = roc_auc_score(y_test_bin, y_prob)
 
+plt.figure(figsize=(6,5))
 plt.plot(fpr, tpr, label=f"AUC = {auc_score:.3f}")
 plt.plot([0, 1], [0, 1], linestyle="--", color="gray")
-plt.xlabel("False Positive Rate"); plt.ylabel("True Positive Rate")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
 plt.title("ROC Curve")
-plt.legend(); plt.show()
+plt.xlim([0,1])
+plt.ylim([0,1])
+plt.legend()
+plt.tight_layout()
+plt.savefig(r"D:\Projects\MoodMate\paper_code\Plots\angry\ROC_curve.pdf")
+plt.close()
 
 print(f"ROC AUC Score = {auc_score:.3f}")
 
